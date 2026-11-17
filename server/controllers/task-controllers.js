@@ -189,12 +189,12 @@ module.exports.deleteTask = async (req, res) => {
 
 module.exports.getTasks = async (req, res) => {
   try {
-    // Pagination
+    // 1. Pagination
     const page = Number(req.query.page) || 1;
     const limit = Number(req.query.limit) || 3;
     const skip = (page - 1) * limit;
 
-    // Filtering
+    // 2. Get filters
     const { status, priority } = req.query;
 
     const filters = {};
@@ -207,35 +207,46 @@ module.exports.getTasks = async (req, res) => {
       filters.priority = priority;
     }
 
-    // Role-based conditions
-    let roleFilter = {};
+    // 3. Find tasks based on role
+    let tasks;
+    let totalTasks;
 
     if (req.user.role === 'ADMIN') {
-      roleFilter = {};
+      totalTasks = await Task.countDocuments(filters);
+
+      tasks = await Task.find(filters).skip(skip).limit(limit);
     } else if (req.user.role === 'MANAGER') {
-      roleFilter = { createdBy: req.user.id };
+      totalTasks = await Task.countDocuments({
+        createdBy: req.user.id,
+        ...filters,
+      });
+
+      tasks = await Task.find({
+        createdBy: req.user.id,
+        ...filters,
+      })
+        .skip(skip)
+        .limit(limit);
     } else if (req.user.role === 'USER') {
-      roleFilter = { assignedTo: req.user.id };
+      totalTasks = await Task.countDocuments({
+        assignedTo: req.user.id,
+        ...filters,
+      });
+
+      tasks = await Task.find({
+        assignedTo: req.user.id,
+        ...filters,
+      })
+        .skip(skip)
+        .limit(limit);
     } else {
       return res.status(403).json({
         message: 'Access denied',
       });
     }
 
-    // Combine role and query filters
-    const finalFilter = {
-      ...roleFilter,
-      ...filters,
-    };
-
-    // Get total matching tasks
-    const totalTasks = await Task.countDocuments(finalFilter);
-
-    // Calculate total pages
+    // 4. Calculate total pages
     const totalPages = Math.ceil(totalTasks / limit);
-
-    // Get paginated tasks
-    const tasks = await Task.find(finalFilter).skip(skip).limit(limit);
 
     return res.status(200).json({
       currentPage: page,
